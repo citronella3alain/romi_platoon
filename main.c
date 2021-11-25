@@ -1,6 +1,4 @@
-// Blink app
-//
-// Blinks the LEDs on Buckler
+
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -22,35 +20,20 @@
 #include "buckler.h"
 #include "virtual_timer.h"
 
-// void SWI1_EGU1_IRQHandler(void) {
-//     NRF_EGU1->EVENTS_TRIGGERED[0] = 0;
-//     for (int i = 0; i < 50; i++) {
-//       printf("software interrupt #%d\n", i);
-//       nrf_delay_ms(100);
-//     }
-// }
+void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
+  // Set up "listeners" 
+  // Grove A0 corresponds to P0.04
+  uint32_t loToHiConfig = (1UL << 0) | (1UL << 10) | (1UL << 16); // LoToHi
+  uint32_t hiToLoConfig = (1UL << 0) | (1UL << 10) | (1UL << 17); // HiToLo
+  uint32_t intenset = (1UL << 0) | (1UL << 1); // enable interrupts for events `IN[0]` and `IN[1]`
+  NRF_GPIOTE->CONFIG[0] = loToHiConfig;
+  NRF_GPIOTE->CONFIG[1] = hiToLoConfig;
+  NRF_GPIOTE->INTENSET = intenset;
+  NVIC_EnableIRQ(GPIOTE_IRQn);
+  NVIC_SetPriority(GPIOTE_IRQn, 1);
+}
 
-// void GPIOTE_IRQHandler(void) {
-//     NRF_GPIOTE->EVENTS_IN[0] = 0;
-//     for (int i = 0; i < 100; i++){
-//       //gpio_set(23);
-//       //nrf_delay_ms(500);
-//       //gpio_clear(23);
-//       //nrf_delay_ms(500);
-//       printf("BUTTON INTERRUPT! ending in %d\n", 99 - i);
-//     }
-// }
-
-// void GPIOTE_HiToLoButtonEvent(void){
-//   uint32_t config0 = (1UL << 0) | (1UL << 10) | (1UL << 11) | (1UL << 12) | (1UL << 17) | (1UL << 20) ;
-//   uint32_t intenset = (1UL << 0);
-//   NRF_GPIOTE->CONFIG[0] = config0;
-//   NRF_GPIOTE->INTENSET = intenset;
-//   NVIC_EnableIRQ(GPIOTE_IRQn);
-//   NVIC_SetPriority(GPIOTE_IRQn, 0);
-// }
-
-static uint32_t duration() {
+static void ultrasonic_holler (void) {
   gpio_config(4, OUTPUT);
   gpio_clear(4);
   nrf_delay_us(2);
@@ -58,6 +41,26 @@ static uint32_t duration() {
   nrf_delay_us(15);
   gpio_clear(4);
   gpio_config(4, INPUT);
+}
+
+void GPIOTE_IRQHandler(void) {
+    // handle echo returning
+    if (NRF_GPIOTE->EVENTS_IN[0]) {
+      // rising edge detected
+      NRF_GPIOTE->EVENTS_IN[0] = 0;
+      printf("rising edge detected\n");
+    }
+    else if (NRF_GPIOTE->EVENTS_IN[1]) {
+      NRF_GPIOTE->EVENTS_IN[1] = 0;
+      printf("falling edge detected\n");
+    }
+    else {
+      printf("something weird here");
+    }
+}
+
+static uint32_t duration() {
+  ultrasonic_holler();
   
   uint32_t timeout = 1000000L;
   uint32_t begin = read_timer();
@@ -80,20 +83,17 @@ int main(void) {
   printf("Log initialized!\n");
 
   virtual_timer_init();
+  nrf_delay_ms(3000);
+  virtual_timer_start_repeated(1000000, ultrasonic_holler);
+  GPIOTE_Ultrasonic_ReceiveEdgeEvent();
 
-  // gpio_config(23, OUTPUT);
-  // gpio_config(28, INPUT);
-
-  // GPIOTE_HiToLoButtonEvent();
-
-  // software_interrupt_init();
-  // NVIC_SetPriority(SWI1_EGU1_IRQn, 5);
-  // printf("wtf");
   int iter = 0;
   // loop forever
-  while (1) {
-    uint32_t dist = duration();
-    printf("%d: %d\n", iter++, dist);
-    nrf_delay_ms(1000);
-  }
+  // while (1) {
+  //   uint32_t dist = duration();
+  //   printf("%d, %d\n", iter++, dist);
+  //   // ultrasonic_holler();
+  //   nrf_delay_ms(2000);
+  // }
+  
 }
