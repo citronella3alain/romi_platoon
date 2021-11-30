@@ -59,18 +59,21 @@ void GPIOTE_IRQHandler(void) {
     }
 }
 
-static uint32_t duration() {
+void duration() {
+  printf("entered duration\n");
   ultrasonic_holler();
   
   uint32_t timeout = 1000000L;
   uint32_t begin = read_timer();
-  while (gpio_read(4)) if (read_timer() - begin >= timeout) { return 0; }
-  while (!gpio_read(4)) if (read_timer() - begin >= timeout) { return 0; }
+  while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
+  while (!gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
   uint32_t pulseBegin = read_timer();
 
-  while (gpio_read(4)) if (read_timer() - begin >= timeout) { return 0; }
+  while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
   uint32_t pulseEnd = read_timer();
-  return (pulseEnd - pulseBegin)*(10/2) / 29;  
+  uint32_t dist = (pulseEnd - pulseBegin)*(10/2) / 29;
+  printf("%d\n", dist);
+  // return dist;  
 }
 
 int main(void) {
@@ -84,16 +87,18 @@ int main(void) {
 
   virtual_timer_init();
   nrf_delay_ms(3000);
-  virtual_timer_start_repeated(1000000, ultrasonic_holler);
-  GPIOTE_Ultrasonic_ReceiveEdgeEvent();
+  // virtual_timer_start_repeated(1000000, ultrasonic_holler);
+  virtual_timer_start_repeated(1000000, duration);
+  // GPIOTE_Ultrasonic_ReceiveEdgeEvent();
 
   int iter = 0;
   // loop forever
-  // while (1) {
+  while (1) {
   //   uint32_t dist = duration();
   //   printf("%d, %d\n", iter++, dist);
   //   // ultrasonic_holler();
-  //   nrf_delay_ms(2000);
-  // }
+    // printf("%d\n", read_timer());
+    nrf_delay_ms(2000);
+  }
   
 }

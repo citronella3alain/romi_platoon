@@ -13,12 +13,10 @@
 typedef struct node_t {
 
     // *** Additional timer fields ***
-	  virtual_timer_callback_t callback;
-    // add your own variables here
-	  bool repeated;
 
-		// allows us to set how frequent the timer ought to be
-		uint32_t duration;
+    // add your own variables here
+    virtual_timer_callback_t callback;
+    uint32_t period;
 
     // *** Do not edit below this line ***
 
@@ -56,3 +54,4 @@ void list_remove(node_t* node);
 
 // Print the linked list for debugging.
 void list_print();
+
