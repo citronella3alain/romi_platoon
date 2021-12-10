@@ -14,54 +14,87 @@
 #include "nrf_log_default_backends.h"
 #include "nrf_pwr_mgmt.h"
 #include "nrf_serial.h"
-#include "software_interrupt.h"
-#include "gpio.h"
+// #include "software_interrupt.h"
+// #include "gpio.h"
 
 #include "buckler.h"
 #include "virtual_timer.h"
+uint32_t rising_time = 0;
+uint32_t falling_time = 0;
 
 void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
   // Set up "listeners" 
   // Grove A0 corresponds to P0.04
   uint32_t loToHiConfig = (1UL << 0) | (1UL << 10) | (1UL << 16); // LoToHi
   uint32_t hiToLoConfig = (1UL << 0) | (1UL << 10) | (1UL << 17); // HiToLo
-  uint32_t intenset = (1UL << 0) | (1UL << 1); // enable interrupts for events `IN[0]` and `IN[1]`
+  uint32_t intenset_both = (1UL << 0) | (1UL << 1); // enable interrupts for events `IN[0]` and `IN[1]`
+
+  uint32_t toggleConfig = (1UL << 0) | (1UL << 10) | (1UL << 16) | (1UL << 17); // toggle
+  uint32_t intenset_toggle = (1UL << 0);
+
   NRF_GPIOTE->CONFIG[0] = loToHiConfig;
   NRF_GPIOTE->CONFIG[1] = hiToLoConfig;
-  NRF_GPIOTE->INTENSET = intenset;
+  NRF_GPIOTE->INTENSET = intenset_both;
+  // NRF_GPIOTE->CONFIG[0] = toggleConfig;
+  // NRF_GPIOTE->INTENSET = intenset_toggle;
   NVIC_EnableIRQ(GPIOTE_IRQn);
   NVIC_SetPriority(GPIOTE_IRQn, 1);
 }
 
-static void ultrasonic_holler (void) {
-  gpio_config(4, OUTPUT);
-  gpio_clear(4);
+// static void grove_holler (void) {
+//   printf("hollering\n");
+//   gpio_config(4, OUTPUT);
+//   gpio_clear(4);
+//   nrf_delay_us(2);
+//   gpio_set(4);
+//   nrf_delay_us(15);
+//   gpio_clear(4);
+//   gpio_config(4, INPUT);
+//   printf("hollered\n");
+// }
+static void grove_holler (void) {
+  // printf("hollering\n");
+  // first disable GPIOTE
+  NRF_GPIOTE->CONFIG[0] = 0;
+  NRF_GPIOTE->CONFIG[1] = 0;
+
+  nrf_gpio_cfg_output(4);
+  nrf_gpio_pin_clear(4);
   nrf_delay_us(2);
-  gpio_set(4);
+  nrf_gpio_pin_set(4);
   nrf_delay_us(15);
-  gpio_clear(4);
-  gpio_config(4, INPUT);
+  nrf_gpio_pin_clear(4);
+  nrf_delay_us(2);
+  nrf_gpio_cfg_input(4, NRF_GPIO_PIN_NOPULL);
+  GPIOTE_Ultrasonic_ReceiveEdgeEvent();
+  printf("hollered\n");
 }
 
 void GPIOTE_IRQHandler(void) {
     // handle echo returning
+    // NRF_GPIOTE->EVENTS_IN[0] = 0;
+    // NRF_GPIOTE->EVENTS_IN[1] = 0;
     if (NRF_GPIOTE->EVENTS_IN[0]) {
       // rising edge detected
       NRF_GPIOTE->EVENTS_IN[0] = 0;
-      printf("rising edge detected\n");
+      // printf("rising edge detected ");
+      rising_time = read_timer();
     }
     else if (NRF_GPIOTE->EVENTS_IN[1]) {
       NRF_GPIOTE->EVENTS_IN[1] = 0;
-      printf("falling edge detected\n");
+      // printf("falling edge detected "); 
+      falling_time = read_timer();
+      uint32_t dist = (falling_time - rising_time)*(10/2) / 29;
+      printf("dist: %d\n", dist);
     }
     else {
       printf("something weird here");
     }
+    // printf("at: %d\n", read_timer());
 }
 
 void duration() {
-  printf("entered duration\n");
-  ultrasonic_holler();
+  grove_holler();
   
   uint32_t timeout = 1000000L;
   uint32_t begin = read_timer();
@@ -87,17 +120,19 @@ int main(void) {
 
   virtual_timer_init();
   nrf_delay_ms(3000);
-  // virtual_timer_start_repeated(1000000, ultrasonic_holler);
-  virtual_timer_start_repeated(1000000, duration);
   // GPIOTE_Ultrasonic_ReceiveEdgeEvent();
+  virtual_timer_start_repeated(1000000, grove_holler);
+  // virtual_timer_start_repeated(1000000, duration);
+  
 
   int iter = 0;
   // loop forever
   while (1) {
   //   uint32_t dist = duration();
   //   printf("%d, %d\n", iter++, dist);
-  //   // ultrasonic_holler();
+  //   // grove_holler();
     // printf("%d\n", read_timer());
+    // grove_holler();
     nrf_delay_ms(2000);
   }
   
