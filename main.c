@@ -41,17 +41,7 @@ void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
   NVIC_SetPriority(GPIOTE_IRQn, 1);
 }
 
-// static void grove_holler (void) {
-//   printf("hollering\n");
-//   gpio_config(4, OUTPUT);
-//   gpio_clear(4);
-//   nrf_delay_us(2);
-//   gpio_set(4);
-//   nrf_delay_us(15);
-//   gpio_clear(4);
-//   gpio_config(4, INPUT);
-//   printf("hollered\n");
-// }
+
 static void grove_holler (void) {
   // printf("hollering\n");
   // first disable GPIOTE
