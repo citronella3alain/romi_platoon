@@ -28,18 +28,18 @@ nrfx_gpiote_pin_t sensor1_pin = 4;
 void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
   // Set up "listeners" 
   // Grove A0 corresponds to P0.04
-  uint32_t loToHiConfig = (1UL << 0) | (1UL << 10) | (1UL << 16); // LoToHi
-  uint32_t hiToLoConfig = (1UL << 0) | (1UL << 10) | (1UL << 17); // HiToLo
-  uint32_t intenset_both = (1UL << 0) | (1UL << 1); // enable interrupts for events `IN[0]` and `IN[1]`
+  // uint32_t loToHiConfig = (1UL << 0) | (1UL << 10) | (1UL << 16); // LoToHi
+  // uint32_t hiToLoConfig = (1UL << 0) | (1UL << 10) | (1UL << 17); // HiToLo
+  // uint32_t intenset_both = (1UL << 0) | (1UL << 1); // enable interrupts for events `IN[0]` and `IN[1]`
 
   uint32_t toggleConfig = (1UL << 0) | (1UL << 10) | (1UL << 16) | (1UL << 17); // toggle
   uint32_t intenset_toggle = (1UL << 0);
 
-  NRF_GPIOTE->CONFIG[0] = loToHiConfig;
-  NRF_GPIOTE->CONFIG[1] = hiToLoConfig;
-  NRF_GPIOTE->INTENSET = intenset_both;
-  // NRF_GPIOTE->CONFIG[0] = toggleConfig;
-  // NRF_GPIOTE->INTENSET = intenset_toggle;
+  // NRF_GPIOTE->CONFIG[0] = loToHiConfig;
+  // NRF_GPIOTE->CONFIG[1] = hiToLoConfig;
+  // NRF_GPIOTE->INTENSET = intenset_both;
+  NRF_GPIOTE->CONFIG[0] = toggleConfig;
+  NRF_GPIOTE->INTENSET = intenset_toggle;
   NVIC_EnableIRQ(GPIOTE_IRQn);
   NVIC_SetPriority(GPIOTE_IRQn, 1);
 }
@@ -48,9 +48,11 @@ void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
 static void grove_holler (void) {
   // printf("hollering\n");
   // first disable GPIOTE
-  // NRF_GPIOTE->CONFIG[0] = 0;
+  NRF_GPIOTE->CONFIG[0] = 0;
   // NRF_GPIOTE->CONFIG[1] = 0;
-  nrfx_gpiote_in_uninit(sensor1_pin);
+
+  // we need to disable gpiote on pin before we can do gpio ops
+  // nrfx_gpiote_in_event_disable(sensor1_pin);
 
   nrf_gpio_cfg_output(4);
   nrf_gpio_pin_clear(4);
@@ -87,11 +89,16 @@ static void grove_holler (void) {
 //     // printf("at: %d\n", read_timer());
 // }
 
-void handle_received_echo (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
-  printf("pin: %d, polarity: %d\n", pin, action);
+void handle_received_echo_rising (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
+  printf("toggle: pin: %d, polarity: %d\n", pin, action);
+  uint32_t time = read_timer();
+  printf("time: %d\n", time);
   return;
 }
-
+// void handle_received_echo_falling (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
+//   printf("fall: pin: %d, polarity: %d\n", pin, action);
+//   return;
+// }
 
 // void duration() {
 //   grove_holler();
@@ -129,14 +136,23 @@ int main(void) {
   
   // init GPIOTE input pin
   nrfx_gpiote_in_config_t* lo2hi_config = (nrfx_gpiote_in_config_t*) malloc(sizeof(nrfx_gpiote_in_config_t));
-  lo2hi_config->sense = NRF_GPIOTE_POLARITY_LOTOHI;
+  lo2hi_config->sense = NRF_GPIOTE_POLARITY_TOGGLE;
   lo2hi_config->pull = GPIO_PIN_CNF_PULL_Disabled;
   lo2hi_config->is_watcher = false; // we are not tracking an output
   lo2hi_config->hi_accuracy = true; // high accuracy (IN_EVENT) used
   lo2hi_config->skip_gpio_setup = true; // do not change gpio configuration
 
-  nrfx_err_t init_err = nrfx_gpiote_in_init(sensor1_pin, lo2hi_config, &handle_received_echo);
+  // nrfx_gpiote_in_config_t* hi2lo_config = (nrfx_gpiote_in_config_t*) malloc(sizeof(nrfx_gpiote_in_config_t));
+  // lo2hi_config->sense = NRF_GPIOTE_POLARITY_HITOLO;
+  // lo2hi_config->pull = GPIO_PIN_CNF_PULL_Disabled;
+  // lo2hi_config->is_watcher = false; // we are not tracking an output
+  // lo2hi_config->hi_accuracy = true; // high accuracy (IN_EVENT) used
+  // lo2hi_config->skip_gpio_setup = true; // do not change gpio configuration
 
+  nrfx_err_t init_err = nrfx_gpiote_in_init(sensor1_pin, lo2hi_config, handle_received_echo_rising);
+  // init_err = nrfx_gpiote_in_init(sensor1_pin, hi2lo_config, handle_received_echo_falling);
+
+  // printf("nrfx gpiote input initialized!\n");
   virtual_timer_init();
   nrf_delay_ms(3000);
   // GPIOTE_Ultrasonic_ReceiveEdgeEvent();
