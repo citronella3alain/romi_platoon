@@ -14,6 +14,7 @@
 #include "nrf_log_default_backends.h"
 #include "nrf_pwr_mgmt.h"
 #include "nrf_serial.h"
+#include "nrfx_gpiote.h"
 // #include "software_interrupt.h"
 // #include "gpio.h"
 
@@ -21,6 +22,8 @@
 #include "virtual_timer.h"
 uint32_t rising_time = 0;
 uint32_t falling_time = 0;
+
+nrfx_gpiote_pin_t sensor1_pin = 4;
 
 void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
   // Set up "listeners" 
@@ -45,8 +48,9 @@ void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
 static void grove_holler (void) {
   // printf("hollering\n");
   // first disable GPIOTE
-  NRF_GPIOTE->CONFIG[0] = 0;
-  NRF_GPIOTE->CONFIG[1] = 0;
+  // NRF_GPIOTE->CONFIG[0] = 0;
+  // NRF_GPIOTE->CONFIG[1] = 0;
+  nrfx_gpiote_in_uninit(sensor1_pin);
 
   nrf_gpio_cfg_output(4);
   nrf_gpio_pin_clear(4);
@@ -60,44 +64,50 @@ static void grove_holler (void) {
   printf("hollered\n");
 }
 
-void GPIOTE_IRQHandler(void) {
-    // handle echo returning
-    // NRF_GPIOTE->EVENTS_IN[0] = 0;
-    // NRF_GPIOTE->EVENTS_IN[1] = 0;
-    if (NRF_GPIOTE->EVENTS_IN[0]) {
-      // rising edge detected
-      NRF_GPIOTE->EVENTS_IN[0] = 0;
-      // printf("rising edge detected ");
-      rising_time = read_timer();
-    }
-    else if (NRF_GPIOTE->EVENTS_IN[1]) {
-      NRF_GPIOTE->EVENTS_IN[1] = 0;
-      // printf("falling edge detected "); 
-      falling_time = read_timer();
-      uint32_t dist = (falling_time - rising_time)*(10/2) / 29;
-      printf("dist: %d\n", dist);
-    }
-    else {
-      printf("something weird here");
-    }
-    // printf("at: %d\n", read_timer());
+// void GPIOTE_IRQHandler(void) {
+//     // handle echo returning
+//     // NRF_GPIOTE->EVENTS_IN[0] = 0;
+//     // NRF_GPIOTE->EVENTS_IN[1] = 0;
+//     if (NRF_GPIOTE->EVENTS_IN[0]) {
+//       // rising edge detected
+//       NRF_GPIOTE->EVENTS_IN[0] = 0;
+//       // printf("rising edge detected ");
+//       rising_time = read_timer();
+//     }
+//     else if (NRF_GPIOTE->EVENTS_IN[1]) {
+//       NRF_GPIOTE->EVENTS_IN[1] = 0;
+//       // printf("falling edge detected "); 
+//       falling_time = read_timer();
+//       uint32_t dist = (falling_time - rising_time)*(10/2) / 29;
+//       printf("dist: %d\n", dist);
+//     }
+//     else {
+//       printf("something weird here");
+//     }
+//     // printf("at: %d\n", read_timer());
+// }
+
+void handle_received_echo (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
+  printf("pin: %d, polarity: %d\n", pin, action);
+  return;
 }
 
-void duration() {
-  grove_holler();
+
+// void duration() {
+//   grove_holler();
   
-  uint32_t timeout = 1000000L;
-  uint32_t begin = read_timer();
-  while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
-  while (!gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
-  uint32_t pulseBegin = read_timer();
+//   uint32_t timeout = 1000000L;
+//   uint32_t begin = read_timer();
+//   while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
+//   while (!gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
+//   uint32_t pulseBegin = read_timer();
 
-  while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
-  uint32_t pulseEnd = read_timer();
-  uint32_t dist = (pulseEnd - pulseBegin)*(10/2) / 29;
-  printf("%d\n", dist);
-  // return dist;  
-}
+//   while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
+//   uint32_t pulseEnd = read_timer();
+//   uint32_t dist = (pulseEnd - pulseBegin)*(10/2) / 29;
+//   printf("%d\n", dist);
+//   // return dist;  
+// }
 
 int main(void) {
   ret_code_t error_code = NRF_SUCCESS;
@@ -107,6 +117,25 @@ int main(void) {
   APP_ERROR_CHECK(error_code);
   NRF_LOG_DEFAULT_BACKENDS_INIT();
   printf("Log initialized!\n");
+
+  // initialize GPIOTE library
+  if (!(nrfx_gpiote_is_init())) {
+    nrfx_err_t err = nrfx_gpiote_init();
+    if (err == NRFX_ERROR_INVALID_STATE) {
+      printf("Could not initialize GPIOTE module. Exiting...\n");
+      return 1;
+    }
+  }
+  
+  // init GPIOTE input pin
+  nrfx_gpiote_in_config_t* lo2hi_config = (nrfx_gpiote_in_config_t*) malloc(sizeof(nrfx_gpiote_in_config_t));
+  lo2hi_config->sense = NRF_GPIOTE_POLARITY_LOTOHI;
+  lo2hi_config->pull = GPIO_PIN_CNF_PULL_Disabled;
+  lo2hi_config->is_watcher = false; // we are not tracking an output
+  lo2hi_config->hi_accuracy = true; // high accuracy (IN_EVENT) used
+  lo2hi_config->skip_gpio_setup = true; // do not change gpio configuration
+
+  nrfx_err_t init_err = nrfx_gpiote_in_init(sensor1_pin, lo2hi_config, &handle_received_echo);
 
   virtual_timer_init();
   nrf_delay_ms(3000);
