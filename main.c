@@ -19,13 +19,28 @@
 #include "buckler.h"
 #include "virtual_timer.h"
 
-uint32_t rising_time = 0; 
-// begin of time interval at which echo starts
+// from driving
 
+#include "nrf_drv_spi.h"
+#include "display.h"
+#include "kobukiActuator.h"
+#include "kobukiSensorPoll.h"
+#include "kobukiSensorTypes.h"
+#include "kobukiUtilities.h"
+#include "lsm9ds1.h"
+#include "controller.h"
+//#include "threading.h"
+
+uint32_t rising_time = 0;
+// begin of time interval at which echo starts
+  robot_state_t state = OFF;
 nrfx_gpiote_pin_t sensor1_pin = 4;
 
+NRF_TWI_MNGR_DEF(twi_mngr_instance, 5, 0);
+pthread_mutex_t lock;
+
 void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
-  // Set up "listeners" 
+  // Set up "listeners"
   // Grove A0 corresponds to P0.04
   // uint32_t loToHiConfig = (1UL << 0) | (1UL << 10) | (1UL << 16); // LoToHi
   // uint32_t hiToLoConfig = (1UL << 0) | (1UL << 10) | (1UL << 17); // HiToLo
@@ -57,8 +72,9 @@ static void grove_holler (void) {
   nrf_gpio_pin_clear(4);
   nrf_delay_us(2);
   nrf_gpio_cfg_input(4, NRF_GPIO_PIN_NOPULL);
-  GPIOTE_Ultrasonic_ReceiveEdgeEvent(); // this works but not 100% sure why 
+  GPIOTE_Ultrasonic_ReceiveEdgeEvent(); // this works but not 100% sure why
   printf("hollered\n");
+
 }
 
 
@@ -81,7 +97,7 @@ void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t a
 
 // void duration() {
 //   grove_holler();
-  
+
 //   uint32_t timeout = 1000000L;
 //   uint32_t begin = read_timer();
 //   while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
@@ -92,10 +108,16 @@ void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t a
 //   uint32_t pulseEnd = read_timer();
 //   uint32_t dist = (pulseEnd - pulseBegin)*(10/2) / 29;
 //   printf("%d\n", dist);
-//   // return dist;  
+//   // return dist;
 // }
 
 int main(void) {
+  // if (pthread_mutex_init(&lock, NULL) != 0)
+  //     {
+  //         printf("\n mutex init failed\n");
+  //         return 1;
+  //     }
+
   ret_code_t error_code = NRF_SUCCESS;
 
   // initialize RTT library
@@ -103,6 +125,11 @@ int main(void) {
   APP_ERROR_CHECK(error_code);
   NRF_LOG_DEFAULT_BACKENDS_INIT();
   printf("Log initialized!\n");
+
+  // initialize LEDs
+  nrf_gpio_pin_dir_set(23, NRF_GPIO_PIN_DIR_OUTPUT);
+  nrf_gpio_pin_dir_set(24, NRF_GPIO_PIN_DIR_OUTPUT);
+  nrf_gpio_pin_dir_set(25, NRF_GPIO_PIN_DIR_OUTPUT);
 
   // initialize GPIOTE library
   if (!(nrfx_gpiote_is_init())) {
@@ -112,7 +139,7 @@ int main(void) {
       return 1;
     }
   }
-  
+
   // init GPIOTE input pin
   nrfx_gpiote_in_config_t* toggle_config = (nrfx_gpiote_in_config_t*) malloc(sizeof(nrfx_gpiote_in_config_t));
   toggle_config->sense = NRF_GPIOTE_POLARITY_TOGGLE;
@@ -127,18 +154,55 @@ int main(void) {
   virtual_timer_init();
   nrf_delay_ms(3000);
 
-  // measurement rate of ~10 hz 
-  virtual_timer_start_repeated(100000, grove_holler); 
+  // measurement rate of ~10 hz
+  virtual_timer_start_repeated(100000, grove_holler);
   // virtual_timer_start_repeated(1000000, duration);
-  
+
+  // start from driving:
+
+  // initialize display
+  nrf_drv_spi_t spi_instance = NRF_DRV_SPI_INSTANCE(1);
+  nrf_drv_spi_config_t spi_config = {
+    .sck_pin = BUCKLER_LCD_SCLK,
+    .mosi_pin = BUCKLER_LCD_MOSI,
+    .miso_pin = BUCKLER_LCD_MISO,
+    .ss_pin = BUCKLER_LCD_CS,
+    .irq_priority = NRFX_SPI_DEFAULT_CONFIG_IRQ_PRIORITY,
+    .orc = 0,
+    .frequency = NRF_DRV_SPI_FREQ_4M,
+    .mode = NRF_DRV_SPI_MODE_2,
+    .bit_order = NRF_DRV_SPI_BIT_ORDER_MSB_FIRST
+  };
+  error_code = nrf_drv_spi_init(&spi_instance, &spi_config, NULL, NULL);
+  APP_ERROR_CHECK(error_code);
+  display_init(&spi_instance);
+  display_write("Hello, Human!", DISPLAY_LINE_0);
+  printf("Display initialized!\n");
+
+  // initialize i2c master (two wire interface)
+  nrf_drv_twi_config_t i2c_config = NRF_DRV_TWI_DEFAULT_CONFIG;
+  i2c_config.scl = BUCKLER_SENSORS_SCL;
+  i2c_config.sda = BUCKLER_SENSORS_SDA;
+  i2c_config.frequency = NRF_TWIM_FREQ_100K;
+  error_code = nrf_twi_mngr_init(&twi_mngr_instance, &i2c_config);
+  APP_ERROR_CHECK(error_code);
+  lsm9ds1_init(&twi_mngr_instance);
+  printf("IMU initialized!\n");
+
+  // initialize Kobuki
+  kobukiInit();
+  printf("Kobuki initialized!\n");
 
   int iter = 0;
   // loop forever
+
+  robot_state_t state = OFF;
   while (1) {
   //   uint32_t dist = duration();
   //   printf("%d, %d\n", iter++, dist);
     // printf("%d\n", read_timer());
-    nrf_delay_ms(2000);
+    nrf_delay_ms(1000);
+    state = controller(state);
   }
-  
+
 }
