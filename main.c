@@ -76,6 +76,10 @@ static void grove_holler (void) {
   printf("hollered\n");
 
 }
+static void darkness_sensor(){
+  printf("darkness sensor");
+
+}
 
 
 void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
@@ -156,6 +160,7 @@ int main(void) {
 
   // measurement rate of ~10 hz
   virtual_timer_start_repeated(100000, grove_holler);
+  //virtual_timer_start_repeated(500001, darkness_sensor);
   // virtual_timer_start_repeated(1000000, duration);
 
   // start from driving:
@@ -201,7 +206,7 @@ int main(void) {
   //   uint32_t dist = duration();
   //   printf("%d, %d\n", iter++, dist);
     // printf("%d\n", read_timer());
-    nrf_delay_ms(1000);
+    nrf_delay_ms(1);
     state = controller(state);
   }
 
