@@ -7,4 +7,4 @@ static void darkness_sensor();
 
 static float measure_distance(uint16_t current_encoder, uint16_t previous_encoder);
 
-robot_state_t controller(robot_state_t state);
+robot_state_t controller(robot_state_t state, uint32_t dist_mm);

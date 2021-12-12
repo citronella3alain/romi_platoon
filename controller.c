@@ -23,11 +23,11 @@ int D;
 
 int lastError = 0;
 
-const uint16_t basespeedL = 75;
-const uint16_t basespeedR = 75;
+uint16_t basespeedL = 75;
+uint16_t basespeedR = 75;
 
-const uint16_t maxspeedL = 100;
-const uint16_t maxspeedR = 100; 
+const uint16_t maxspeedL = 125;
+const uint16_t maxspeedR = 125;
 
 static float measure_distance(uint16_t current_encoder, uint16_t previous_encoder) {
   const float CONVERSION = 0.00065;
@@ -59,7 +59,7 @@ static void check_line(KobukiSensors_t* sensors, bool* line_is_right, bool* line
 }
 
 
-robot_state_t controller(robot_state_t state) {
+robot_state_t controller(robot_state_t state, uint32_t dist_mm) {
   // read sensors from robot
   kobukiSensorPoll(&sensors);
 
@@ -111,10 +111,11 @@ robot_state_t controller(robot_state_t state) {
       // transition logic
       if (is_button_pressed(&sensors)) {
         state = OFF;
-      } else if (distance >= 1) {
-        state = OFF;
       } else {
         // perform state-specific actions here
+        ultrasonic_distance_control(dist_mm);
+
+
         PID_control();
         state = DRIVING;
       }
@@ -124,6 +125,19 @@ robot_state_t controller(robot_state_t state) {
 
   // add other cases here
   return state;
+}
+
+void ultrasonic_distance_control(uint32_t dist_mm) {
+  // maintain 50 mm dist between robots
+  // if (dist_mm > 300) {
+  //   basespeedL = 125;
+  //   basespeedR = 125;
+  // } else if (dist_mm < 100) {
+  //   basespeedL = 25;
+  //   basespeedR = 25;
+  // }
+  basespeedL = 50 + .5*dist_mm;
+  basespeedR = 50 + .5*dist_mm;
 }
 
 void PID_control(){

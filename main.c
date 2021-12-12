@@ -37,7 +37,8 @@ uint32_t rising_time = 0;
 nrfx_gpiote_pin_t sensor1_pin = 4;
 
 NRF_TWI_MNGR_DEF(twi_mngr_instance, 5, 0);
-pthread_mutex_t lock;
+
+uint32_t* dist_mm_ptr;
 
 void GPIOTE_Ultrasonic_ReceiveEdgeEvent(void) {
   // Set up "listeners"
@@ -76,10 +77,7 @@ static void grove_holler (void) {
   printf("hollered\n");
 
 }
-static void darkness_sensor(){
-  printf("darkness sensor");
 
-}
 
 
 void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
@@ -91,38 +89,20 @@ void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t a
   }
   else if (curr_pin_state == 0) {
     uint32_t dist = (curr_time - rising_time)*(10/2) / 29;
+
+    *dist_mm_ptr = dist;
     printf("fall on pin %d, t = %d, dist ~ %d mm\n", pin, curr_time, dist);
   }
-  // printf("toggle: pin: %d, state: %d\n", pin, curr_pin_state);
-  // uint32_t time = read_timer();
-  // printf("time: %d\n", time);
+
   return;
 }
 
-// void duration() {
-//   grove_holler();
 
-//   uint32_t timeout = 1000000L;
-//   uint32_t begin = read_timer();
-//   while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
-//   while (!gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
-//   uint32_t pulseBegin = read_timer();
-
-//   while (gpio_read(4)) if (read_timer() - begin >= timeout) { return; }
-//   uint32_t pulseEnd = read_timer();
-//   uint32_t dist = (pulseEnd - pulseBegin)*(10/2) / 29;
-//   printf("%d\n", dist);
-//   // return dist;
-// }
 
 int main(void) {
-  // if (pthread_mutex_init(&lock, NULL) != 0)
-  //     {
-  //         printf("\n mutex init failed\n");
-  //         return 1;
-  //     }
-
   ret_code_t error_code = NRF_SUCCESS;
+
+  dist_mm_ptr = malloc(sizeof(uint32_t));
 
   // initialize RTT library
   error_code = NRF_LOG_INIT(NULL);
@@ -160,8 +140,6 @@ int main(void) {
 
   // measurement rate of ~10 hz
   virtual_timer_start_repeated(100000, grove_holler);
-  //virtual_timer_start_repeated(500001, darkness_sensor);
-  // virtual_timer_start_repeated(1000000, duration);
 
   // start from driving:
 
@@ -207,7 +185,7 @@ int main(void) {
   //   printf("%d, %d\n", iter++, dist);
     // printf("%d\n", read_timer());
     nrf_delay_ms(1);
-    state = controller(state);
+    state = controller(state, *dist_mm_ptr);
   }
 
 }
