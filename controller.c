@@ -23,8 +23,8 @@ int D;
 
 int lastError = 0;
 
-uint16_t basespeedL = 75;
-uint16_t basespeedR = 75;
+uint16_t basespeedL = 50;
+uint16_t basespeedR = 50;
 
 const uint16_t maxspeedL = 125;
 const uint16_t maxspeedR = 125;
@@ -114,7 +114,9 @@ robot_state_t controller(robot_state_t state, uint32_t dist_mm) {
       } else {
         // perform state-specific actions here
         ultrasonic_distance_control(dist_mm);
-
+        if (line_is_right && line_is_left && line_is_center) {
+          display_write("LINELINELINE", DISPLAY_LINE_0);
+        }
 
         PID_control();
         state = DRIVING;
@@ -136,8 +138,22 @@ void ultrasonic_distance_control(uint32_t dist_mm) {
   //   basespeedL = 25;
   //   basespeedR = 25;
   // }
-  basespeedL = 50 + .5*dist_mm;
-  basespeedR = 50 + .5*dist_mm;
+  printf("dist_mm: %d\n", dist_mm);
+  basespeedL = 50 + .5*(dist_mm - 50);
+  basespeedR = 50 + .5* (dist_mm - 50);
+
+  if (basespeedL > 100) {
+	    basespeedL = 100;
+	  }
+	  if (basespeedR > 100) {
+	    basespeedR = 100;
+	  }
+	  if (basespeedL < 25) {
+	    basespeedL = 025;
+	  }
+	  if (basespeedR < 25) {
+	    basespeedR = 025;
+	  }
 }
 
 void PID_control(){
@@ -184,26 +200,9 @@ void PID_control(){
 	  if (motorspeedR < 0) {
 	    motorspeedR = 0;
 	  }
-
-	  if (line_is_right && line_is_left) {
-			display_write("RIGHT AND LEFT", DISPLAY_LINE_0);
-        } else if (line_is_left) {
-        	display_write("LEFT", DISPLAY_LINE_0);
-        } else if (line_is_right) {
-        	display_write("RIGHT", DISPLAY_LINE_0);
-        } else {
-        	display_write("NONE", DISPLAY_LINE_0);
-        }
-
-        // if (line_is_center) {
-        // 	display_write("CENTER", DISPLAY_LINE_1);
-        // } else {
-        // 	display_write("NOT CENTER", DISPLAY_LINE_1);
-        // }
-
-
-
-
+    printf("motor speed L: %d\n", motorspeedL);
+    printf("motor speed R: %d\n", motorspeedR);
+    printf("base speed: %d\n", basespeedL);
 
 	  kobukiDriveDirect(motorspeedR,motorspeedL);
 }
