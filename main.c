@@ -31,12 +31,19 @@
 #include "controller.h"
 //#include "threading.h"
 
-uint32_t rising_time = 0;
-// begin of time interval at which echo starts
-  robot_state_t state = OFF;
-nrfx_gpiote_pin_t sensor1_pin = 4;
 
+#define ULTRASONIC_MEASUREMENT_WINDOW 5
+#define PLATOON_DIST 50
+
+static nrf_drv_spi_t spi_instance = NRF_DRV_SPI_INSTANCE(1);
 NRF_TWI_MNGR_DEF(twi_mngr_instance, 5, 0);
+
+uint32_t rising_time = 0;
+uint32_t ultrasonic_measurement_counter = 0;
+
+// begin of time interval at which echo starts
+robot_state_t state = OFF;
+nrfx_gpiote_pin_t sensor1_pin = 4;
 
 uint32_t* dist_mm_ptr;
 
@@ -78,73 +85,33 @@ static void grove_holler (void) {
 
 }
 
-
-
 void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action){
   uint32_t curr_time = read_timer();
   uint32_t curr_pin_state = nrf_gpio_pin_read(pin);
   if (curr_pin_state == 1) {
     rising_time = curr_time;
-    printf("rise on pin %d, t = %d\n", pin, curr_time);
+    printf("rise on pin %ld, t = %d\n", pin, curr_time);
   }
   else if (curr_pin_state == 0) {
     uint32_t dist = (curr_time - rising_time)*(10/2) / 29;
 
-    *dist_mm_ptr = dist;
-    printf("fall on pin %d, t = %d, dist ~ %d mm\n", pin, curr_time, dist);
+    dist_mm_ptr[ultrasonic_measurement_counter] = dist;
+    ultrasonic_measurement_counter = (ultrasonic_measurement_counter + 1) % ULTRASONIC_MEASUREMENT_WINDOW;
+    printf("fall on pin %ld, t = %d, dist ~ %d mm\n", pin, curr_time, dist);
   }
 
   return;
 }
 
-
-
-int main(void) {
+void initializer() {
   ret_code_t error_code = NRF_SUCCESS;
-
-  dist_mm_ptr = malloc(sizeof(uint32_t));
-
   // initialize RTT library
   error_code = NRF_LOG_INIT(NULL);
   APP_ERROR_CHECK(error_code);
   NRF_LOG_DEFAULT_BACKENDS_INIT();
   printf("Log initialized!\n");
-
-  // initialize LEDs
-  nrf_gpio_pin_dir_set(23, NRF_GPIO_PIN_DIR_OUTPUT);
-  nrf_gpio_pin_dir_set(24, NRF_GPIO_PIN_DIR_OUTPUT);
-  nrf_gpio_pin_dir_set(25, NRF_GPIO_PIN_DIR_OUTPUT);
-
-  // initialize GPIOTE library
-  if (!(nrfx_gpiote_is_init())) {
-    nrfx_err_t err = nrfx_gpiote_init();
-    if (err == NRFX_ERROR_INVALID_STATE) {
-      printf("Could not initialize GPIOTE module. Exiting...\n");
-      return 1;
-    }
-  }
-
-  // init GPIOTE input pin
-  nrfx_gpiote_in_config_t* toggle_config = (nrfx_gpiote_in_config_t*) malloc(sizeof(nrfx_gpiote_in_config_t));
-  toggle_config->sense = NRF_GPIOTE_POLARITY_TOGGLE;
-  toggle_config->pull = GPIO_PIN_CNF_PULL_Disabled;
-  toggle_config->is_watcher = false; // we are not tracking an output
-  toggle_config->hi_accuracy = true; // high accuracy (IN_EVENT) used
-  toggle_config->skip_gpio_setup = true; // do not change gpio configuration
-
-  nrfx_err_t init_err = nrfx_gpiote_in_init(sensor1_pin, toggle_config, handle_received_echo_toggle);
-
-  // printf("nrfx gpiote input initialized!\n");
-  virtual_timer_init();
-  nrf_delay_ms(3000);
-
-  // measurement rate of ~10 hz
-  virtual_timer_start_repeated(100000, grove_holler);
-
-  // start from driving:
-
   // initialize display
-  nrf_drv_spi_t spi_instance = NRF_DRV_SPI_INSTANCE(1);
+
   nrf_drv_spi_config_t spi_config = {
     .sck_pin = BUCKLER_LCD_SCLK,
     .mosi_pin = BUCKLER_LCD_MOSI,
@@ -171,12 +138,52 @@ int main(void) {
   APP_ERROR_CHECK(error_code);
   lsm9ds1_init(&twi_mngr_instance);
   printf("IMU initialized!\n");
+}
 
-  // initialize Kobuki
+int init_gpiote() {
+  dist_mm_ptr = malloc(ULTRASONIC_MEASUREMENT_WINDOW * sizeof(uint32_t));
+  for (uint32_t i = 0; i < ULTRASONIC_MEASUREMENT_WINDOW; i++) {
+    dist_mm_ptr[i] = PLATOON_DIST;
+  }
+  // initialize GPIOTE library
+  if (!(nrfx_gpiote_is_init())) {
+    nrfx_err_t err = nrfx_gpiote_init();
+    if (err == NRFX_ERROR_INVALID_STATE) {
+      printf("Could not initialize GPIOTE module. Exiting...\n");
+      return 1;
+    }
+  }
+
+  // init GPIOTE input pin
+  nrfx_gpiote_in_config_t* toggle_config = (nrfx_gpiote_in_config_t*) malloc(sizeof(nrfx_gpiote_in_config_t));
+  toggle_config->sense = NRF_GPIOTE_POLARITY_TOGGLE;
+  toggle_config->pull = GPIO_PIN_CNF_PULL_Disabled;
+  toggle_config->is_watcher = false; // we are not tracking an output
+  toggle_config->hi_accuracy = true; // high accuracy (IN_EVENT) used
+  toggle_config->skip_gpio_setup = true; // do not change gpio configuration
+
+  nrfx_err_t init_err = nrfx_gpiote_in_init(sensor1_pin, toggle_config, handle_received_echo_toggle);
+  return 0;
+}
+
+void LED_init() {
+  // initialize LEDs
+  nrf_gpio_pin_dir_set(23, NRF_GPIO_PIN_DIR_OUTPUT);
+  nrf_gpio_pin_dir_set(24, NRF_GPIO_PIN_DIR_OUTPUT);
+  nrf_gpio_pin_dir_set(25, NRF_GPIO_PIN_DIR_OUTPUT);
+}
+
+
+
+int main(void) {
+  initializer();
+  init_gpiote();
+  virtual_timer_init();
+  nrf_delay_ms(1000);
+  virtual_timer_start_repeated(100000, grove_holler);
   kobukiInit();
   printf("Kobuki initialized!\n");
 
-  int iter = 0;
   // loop forever
 
   robot_state_t state = OFF;
@@ -185,7 +192,7 @@ int main(void) {
   //   printf("%d, %d\n", iter++, dist);
     // printf("%d\n", read_timer());
     nrf_delay_ms(1);
-    state = controller(state, *dist_mm_ptr);
+    state = controller(state, dist_mm_ptr, ULTRASONIC_MEASUREMENT_WINDOW);
   }
 
 }

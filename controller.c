@@ -41,6 +41,14 @@ static float measure_distance(uint16_t current_encoder, uint16_t previous_encode
   return result = result * CONVERSION;
 }
 
+uint32_t mean(uint32_t* arr, uint32_t arr_size) {
+  uint32_t sum = 0;
+  for (uint32_t i = 0; i < arr_size; i++) {
+    sum += arr[i];
+  }
+  return sum / arr_size;
+}
+
 static void check_line(KobukiSensors_t* sensors, bool* line_is_right, bool* line_is_left, bool* line_is_center) {
   // Your code here
 	*line_is_right = false;
@@ -59,7 +67,7 @@ static void check_line(KobukiSensors_t* sensors, bool* line_is_right, bool* line
 }
 
 
-robot_state_t controller(robot_state_t state, uint32_t dist_mm) {
+robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t num_measurements) {
   // read sensors from robot
   kobukiSensorPoll(&sensors);
 
@@ -113,7 +121,9 @@ robot_state_t controller(robot_state_t state, uint32_t dist_mm) {
         state = OFF;
       } else {
         // perform state-specific actions here
-        ultrasonic_distance_control(dist_mm);
+        uint32_t mean_dist = mean(dist_mm_ptr, num_measurements);
+        printf("mean dist: %d\n", mean_dist);
+        ultrasonic_distance_control(mean_dist);
         if (line_is_right && line_is_left && line_is_center) {
           display_write("LINELINELINE", DISPLAY_LINE_0);
         }
