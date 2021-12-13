@@ -6,6 +6,7 @@
 
 #include "app_error.h"
 #include "app_timer.h"
+#include "app_util.h"
 #include "nrf.h"
 #include "nrf_delay.h"
 #include "nrf_log.h"
@@ -14,6 +15,7 @@
 #include "nrf_log_default_backends.h"
 #include "nrf_pwr_mgmt.h"
 #include "nrf_serial.h"
+#include "nrf_twi_mngr.h"
 #include "nrfx_gpiote.h"
 
 #include "buckler.h"
@@ -31,6 +33,91 @@
 #include "controller.h"
 //#include "threading.h"
 
+#include "simple_ble.h"
+
+//BLUETOOTH
+#define ID 0x0045
+
+static int32_t offset = 0;
+static uint8_t latency = 0;
+static uint32_t ble_times[2] = {0, 0};
+static uint32_t beacon_times[2] = {0, 0};
+
+// Intervals for advertising and connections
+static simple_ble_config_t ble_config = {
+        // c0:98:e5:49:xx:xx
+        .platform_id       = 0x49,    // used as 4th octect in device BLE address
+        .device_id         = ID, // TODO: replace with your lab bench number
+        .adv_name          = "EE149 BUCKLER", // used in advertisements if there is room
+        .adv_interval      = MSEC_TO_UNITS(1000, UNIT_0_625_MS),
+        .min_conn_interval = BLE_GAP_CP_MIN_CONN_INTVL_MIN,
+        .max_conn_interval = MSEC_TO_UNITS(200, UNIT_1_25_MS),
+};
+
+// 32e61089-2b22-4db5-a914-43ce41986c70
+static simple_ble_service_t buckler_service = {{
+    .uuid128 = {0x70,0x6C,0x98,0x41,0xCE,0x43,0x14,0xA9,
+                0xB5,0x4D,0x22,0x2B,0x89,0x10,0xE6,0x32}
+}};
+
+static simple_ble_char_t data_char = {.uuid16 = 0x108a};
+static uint32_t data[4] = {0, 0, 0, 0}; // clock, encoder, ultrasonic, checkpoint
+static simple_ble_char_t instruction_char = {.uuid16 = 0x108b};
+static uint8_t instruction[7] = {0, 0, 0, 0, 0, 0, 0}; // lead toggle, speed, follow_distance, clock
+
+simple_ble_app_t* simple_ble_app;
+
+void ble_evt_write(ble_evt_t const* p_ble_evt) {
+    if (simple_ble_is_char_event(p_ble_evt, &instruction_char)) {
+      uint32_t time = read_timer();
+      data[0] = time;
+      printf("Got write to characteristic!\n");
+      printf("Data: %d, %d, %d \n", data[0], data[1], data[2]);
+      printf("Instruction: %d, %d, %d \n", instruction[0], instruction[1], instruction[2]);
+
+
+      // CRUDE PTP: ASSUME COMPUTATION TO BE INSTANTANEOUS
+
+      beacon_times[0] = beacon_times[1];
+      beacon_times[1] = *((uint32_t *)(instruction[2]));
+
+      if (beacon_times[0] != 0 && beacon_times[1] > beacon_times[0]) {
+        latency = (beacon_times[1] - beacon_times[0])/2;
+        offset = time - beacon_times[1] - latency;
+      }
+
+      printf("Current Time: %d, Offset: %d, Latency: %d \n", time, offset, latency);
+
+      // char buf[16];
+      // snprintf(buf, 16, "OFF: %d", offset);
+      // display_write(buf, DISPLAY_LINE_1);
+    }
+}
+
+void ble_setup() {
+
+  // char buf[16];
+  // snprintf(buf, 16, "ID: %x", ID);
+  // display_write(buf, DISPLAY_LINE_0);
+
+
+  // Setup BLE
+  simple_ble_app = simple_ble_init(&ble_config);
+
+  simple_ble_add_service(&buckler_service);
+
+  simple_ble_add_characteristic(1, 0, 0, 0,
+      sizeof(data), (uint8_t*)&data,
+      &buckler_service, &data_char);
+
+  simple_ble_add_characteristic(0, 1, 0, 0,
+      sizeof(instruction), (uint8_t*)&instruction,
+      &buckler_service, &instruction_char);
+  // Start Advertising
+  simple_ble_adv_only_name();
+}
+
+// END BLUETOOTH CONSTANT define
 
 #define ULTRASONIC_MEASUREMENT_WINDOW 5
 #define PLATOON_DIST 50
@@ -182,6 +269,7 @@ int main(void) {
   nrf_delay_ms(1000);
   virtual_timer_start_repeated(100000, grove_holler);
   kobukiInit();
+  ble_setup();
   printf("Kobuki initialized!\n");
 
   // loop forever
@@ -192,7 +280,8 @@ int main(void) {
   //   printf("%d, %d\n", iter++, dist);
     // printf("%d\n", read_timer());
     nrf_delay_ms(1);
-    state = controller(state, dist_mm_ptr, ULTRASONIC_MEASUREMENT_WINDOW);
+    // power_manage();
+    state = controller(state, dist_mm_ptr, ULTRASONIC_MEASUREMENT_WINDOW, data, instruction);
   }
 
 }

@@ -26,8 +26,8 @@ int lastError = 0;
 uint16_t basespeedL = 50;
 uint16_t basespeedR = 50;
 
-const uint16_t maxspeedL = 125;
-const uint16_t maxspeedR = 125;
+const uint16_t maxspeedL = 150;
+const uint16_t maxspeedR = 150;
 
 static float measure_distance(uint16_t current_encoder, uint16_t previous_encoder) {
   const float CONVERSION = 0.00065;
@@ -67,7 +67,7 @@ static void check_line(KobukiSensors_t* sensors, bool* line_is_right, bool* line
 }
 
 
-robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t num_measurements) {
+robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t num_measurements, uint32_t* data, uint8_t* instruction) {
   // read sensors from robot
   kobukiSensorPoll(&sensors);
 
@@ -122,11 +122,16 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
       } else {
         // perform state-specific actions here
         uint32_t mean_dist = mean(dist_mm_ptr, num_measurements);
+        *(data+2) = mean_dist;
         printf("mean dist: %d\n", mean_dist);
-        ultrasonic_distance_control(mean_dist);
+        //ultrasonic_distance_control(mean_dist);
         if (line_is_right && line_is_left && line_is_center) {
-          display_write("LINELINELINE", DISPLAY_LINE_0);
+          *(data) = read_timer();
+          *(data + 3) += 1;
+
         }
+        basespeedL = (uint8_t)(*(instruction + 1));
+        basespeedR = (uint8_t)(*(instruction + 1));
 
         PID_control();
         state = DRIVING;
