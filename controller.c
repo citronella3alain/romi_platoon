@@ -4,18 +4,24 @@
 #include "kobukiSensorTypes.h"
 #include "display.h"
 
+#include "nrf_gpio.h"
+
 // configure initial state
 KobukiSensors_t sensors = {0};
 uint16_t previous_encoder = 0;
-float distance = 0;
+uint32_t total_encoder_ticks = 0;
 
 bool line_is_right;
 bool line_is_center;
 bool line_is_left;
 
-float Kp = 0.1;
+bool first_line_passed = false;
+
+float Kp = 0.15;
 float Ki = 0.0008;
 float Kd = .6;
+
+uint8_t ignore_count = 0;
 
 int P;
 int I;
@@ -39,6 +45,18 @@ static float measure_distance(uint16_t current_encoder, uint16_t previous_encode
     result = (float)current_encoder + (0xFFFF - (float)previous_encoder);
   }
   return result = result * CONVERSION;
+}
+
+static uint32_t measure_distance_ticks(uint16_t current_encoder, uint16_t previous_encoder) {
+  const float CONVERSION = 0.00065;
+
+  uint16_t result = 0;
+  if (current_encoder >= previous_encoder) {
+    result = current_encoder - previous_encoder;
+  } else {
+    result = current_encoder + (0xFFFF - previous_encoder);
+  }
+  return (uint32_t)(result);
 }
 
 uint32_t mean(uint32_t* arr, uint32_t arr_size) {
@@ -88,7 +106,7 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
       // transition logic
       if (is_button_pressed(&sensors)) {
         state = DRIVING;
-        previous_encoder = sensors.leftWheelEncoder;
+
       } else {
         // perform state-specific actions here
         //display_write("OFF", DISPLAY_LINE_0);
@@ -124,17 +142,51 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
         uint32_t mean_dist = mean(dist_mm_ptr, num_measurements);
         *(data+2) = mean_dist;
         printf("mean dist: %d\n", mean_dist);
-        //ultrasonic_distance_control(mean_dist);
-        if (line_is_right && line_is_left && line_is_center) {
-          *(data) = read_timer();
-          *(data + 3) += 1;
 
+
+
+        if (line_is_right && line_is_left && line_is_center && ignore_count == 0) {
+          if (first_line_passed == false) {
+            previous_encoder = sensors.leftWheelEncoder;
+            first_line_passed = true;
+          }
+
+          ignore_count = 1;
+          //*(data) = read_timer();
+          *(data + 3) += 1;
         }
+
+        if (ignore_count > 10) {
+          ignore_count = 0;
+        } else if (ignore_count > 0) {
+          ignore_count += 1;
+        }
+
         basespeedL = (uint8_t)(*(instruction + 1));
         basespeedR = (uint8_t)(*(instruction + 1));
 
+        //ultrasonic_distance_control(mean_dist);
+
         PID_control();
         state = DRIVING;
+
+        // if curr robot is leader, set all led's to lit
+        if (*(instruction) == 1) {
+          nrf_gpio_pin_write(23, 1);
+          nrf_gpio_pin_write(24, 1);
+          nrf_gpio_pin_write(25, 1);
+        } else {
+          nrf_gpio_pin_write(23, 0);
+          nrf_gpio_pin_write(24, 0);
+          nrf_gpio_pin_write(25, 0);
+        }
+
+        if (first_line_passed) {
+          uint16_t current_encoder = sensors.leftWheelEncoder;
+          total_encoder_ticks = measure_distance_ticks(current_encoder, previous_encoder);
+          *(data + 1) = total_encoder_ticks;
+        }
+
       }
       break; // each case needs to end with break!
     }
@@ -144,15 +196,34 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
   return state;
 }
 
+void ultrasonic_distance_emergency(uint32_t dist_mm) {
+  // current use for ultrasonic distance control:
+    // final last resort way to make sure robots don't collide
+  if (dist_mm < 30) {
+    basespeedL = 25;
+    basespeedR = 25;
+  }
+
+
+  // printf("dist_mm: %d\n", dist_mm);
+  // basespeedL = 50 + .5*(dist_mm - 50);
+  // basespeedR = 50 + .5* (dist_mm - 50);
+  //
+  // if (basespeedL > 100) {
+	//     basespeedL = 100;
+	//   }
+	//   if (basespeedR > 100) {
+	//     basespeedR = 100;
+	//   }
+	//   if (basespeedL < 25) {
+	//     basespeedL = 025;
+	//   }
+	//   if (basespeedR < 25) {
+	//     basespeedR = 025;
+	//   }
+}
+
 void ultrasonic_distance_control(uint32_t dist_mm) {
-  // maintain 50 mm dist between robots
-  // if (dist_mm > 300) {
-  //   basespeedL = 125;
-  //   basespeedR = 125;
-  // } else if (dist_mm < 100) {
-  //   basespeedL = 25;
-  //   basespeedR = 25;
-  // }
   printf("dist_mm: %d\n", dist_mm);
   basespeedL = 50 + .5*(dist_mm - 50);
   basespeedR = 50 + .5* (dist_mm - 50);
@@ -170,7 +241,6 @@ void ultrasonic_distance_control(uint32_t dist_mm) {
 	    basespeedR = 025;
 	  }
 }
-
 void PID_control(){
 	int position;
 
@@ -184,7 +254,9 @@ void PID_control(){
 		position = 350 + 350/2;
 	} else if (!line_is_left && !line_is_center && line_is_right) {
 		position = 700;
-	}
+	} else {
+    position = 350;
+  }
 
 
 	int error = 350 - position;

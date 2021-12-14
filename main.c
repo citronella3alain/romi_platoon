@@ -37,6 +37,7 @@
 
 //BLUETOOTH
 #define ID 0x0045
+#define IS_LEADER 0
 
 static int32_t offset = 0;
 static uint8_t latency = 0;
@@ -63,7 +64,7 @@ static simple_ble_service_t buckler_service = {{
 static simple_ble_char_t data_char = {.uuid16 = 0x108a};
 static uint32_t data[4] = {0, 0, 0, 0}; // clock, encoder, ultrasonic, checkpoint
 static simple_ble_char_t instruction_char = {.uuid16 = 0x108b};
-static uint8_t instruction[7] = {0, 0, 0, 0, 0, 0, 0}; // lead toggle, speed, follow_distance, clock
+static uint8_t instruction[7] = {IS_LEADER, 0, 0, 0, 0, 0, 0}; // lead toggle, speed, follow_distance, clock
 
 simple_ble_app_t* simple_ble_app;
 
@@ -273,6 +274,13 @@ int main(void) {
   printf("Kobuki initialized!\n");
 
   // loop forever
+  LED_init();
+
+  if (IS_LEADER == 1) {
+    nrf_gpio_pin_write(23, 1);
+    nrf_gpio_pin_write(24, 1);
+    nrf_gpio_pin_write(25, 1);
+  }
 
   robot_state_t state = OFF;
   while (1) {
