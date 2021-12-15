@@ -19,7 +19,7 @@ bool line_is_left;
 
 bool first_line_passed = false;
 
-float Kp = 0.15;
+float Kp = 0.175;
 float Ki = 0.0008;
 float Kd = .6;
 
@@ -160,7 +160,7 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
           
         }
 
-        if (ignore_count > 50) {
+        if (ignore_count > 1000) {
           ignore_count = 0;
         } else if (ignore_count > 0) {
           ignore_count += 1;
@@ -176,7 +176,7 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
         } else {
 
           ultrasonic_distance_control(mean_dist);
-
+          ultrasonic_distance_emergency(mean_dist);
         }
 
         
@@ -188,7 +188,7 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
 
 
 
-        if (first_line_passed) {
+        if (lines_crossed % 2 == 1) {
           uint16_t current_encoder = sensors.leftWheelEncoder;
           total_encoder_ticks = measure_distance_ticks(current_encoder, previous_encoder);
           *(data + 1) = total_encoder_ticks;
@@ -208,9 +208,9 @@ robot_state_t controller(robot_state_t state, uint32_t* dist_mm_ptr, uint32_t nu
 void ultrasonic_distance_emergency(uint32_t dist_mm) {
   // current use for ultrasonic distance control:
     // final last resort way to make sure robots don't collide
-  if (dist_mm < 50) {
-    basespeedL = 30;
-    basespeedR = 30;
+  if (dist_mm < 70) {
+    basespeedL = 0;
+    basespeedR = 0;
   }
 
 
@@ -235,19 +235,19 @@ void ultrasonic_distance_emergency(uint32_t dist_mm) {
 void ultrasonic_distance_control(uint32_t dist_mm) {
   printf("dist_mm: %d\n", dist_mm);
 
-  if (dist_mm < 80) {
-    basespeedL = 90 + 3*(dist_mm - 80);
-    basespeedR = 90 + 3* (dist_mm - 80);
+  if (dist_mm < 100) {
+    basespeedL = 70 + 3*(dist_mm - 80);
+    basespeedR = 70 + 3* (dist_mm - 80);
   } else {
-    basespeedL = 90 + .25*(dist_mm - 80);
-    basespeedR = 90 + .25* (dist_mm - 80);
+    basespeedL = 70 + .25*(dist_mm - 80);
+    basespeedR = 70 + .25* (dist_mm - 80);
   }
 
-  if (basespeedL > 125) {
-	    basespeedL = 125;
+  if (basespeedL > 90) {
+	    basespeedL = 90;
 	  }
-	  if (basespeedR > 125) {
-	    basespeedR = 125;
+	  if (basespeedR > 90) {
+	    basespeedR = 90;
 	  }
 	  if (basespeedL < 30) {
 	    basespeedL = 30;

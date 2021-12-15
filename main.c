@@ -183,8 +183,12 @@ void handle_received_echo_toggle (nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t a
   else if (curr_pin_state == 0) {
     uint32_t dist = (curr_time - rising_time)*(10/2) / 29;
 
-    dist_mm_ptr[ultrasonic_measurement_counter] = dist;
-    ultrasonic_measurement_counter = (ultrasonic_measurement_counter + 1) % ULTRASONIC_MEASUREMENT_WINDOW;
+    if (dist > 600) {
+      dist = 90;
+    }
+      dist_mm_ptr[ultrasonic_measurement_counter] = dist;
+      ultrasonic_measurement_counter = (ultrasonic_measurement_counter + 1) % ULTRASONIC_MEASUREMENT_WINDOW;
+    
     printf("fall on pin %ld, t = %d, dist ~ %d mm\n", pin, curr_time, dist);
   }
 
